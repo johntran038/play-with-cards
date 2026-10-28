@@ -1,24 +1,19 @@
 import './App.css'
 
-import React, { lazy, Suspense } from "react";
-import { Routes, Route, Navigate } from "react-router-dom";
-import { useDispatch, useSelector } from "react-redux";
+import { lazy, Suspense } from "react";
+import { Routes, Route } from "react-router-dom";
+
+const Lobby = lazy(() => import("./pages/Lobby"));
+const Table = lazy(() => import("./pages/Table"));
 
 function App() {
-  const Test = lazy(() => import("./pages/Test"));
-  // const Home = lazy(() => import("./pages/Home"));
-  // const TestParam = lazy(() => import("./pages/TestParam"));
-
   return (
-    <>
-      <Suspense fallback={<div>Loading...</div>}>
-        <Routes>
-          <Route exact path="/" element={<Test />} />
-          {/* <Route exact path="/" element={<Home/>} /> */}
-          {/* <Route exact path="/products/test/:param" element={<TestParam/>} /> */}
-        </Routes>
-      </Suspense>
-    </>
+    <Suspense fallback={<div>Loading...</div>}>
+      <Routes>
+        <Route path="/" element={<Lobby />} />
+        <Route path="/room/:code" element={<Table />} />
+      </Routes>
+    </Suspense>
   )
 }
 
