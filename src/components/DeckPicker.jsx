@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 import { FiTrash2, FiX } from "react-icons/fi";
+import CardFace from "./CardFace";
 import { deckCover, deckImages, deckSize, deleteDeck, listDecks } from "../game/decks";
 
-// Lists the decks saved in this browser; picking one hands one image per card to the table.
-export default function DeckPicker({ onClose, onPick }) {
+// Lists the built-in playing cards and the decks saved in this browser; picking a saved one hands one image per card to the table.
+export default function DeckPicker({ onClose, onPick, onPickPlaying }) {
   const [decks, setDecks] = useState(null);
   const [error, setError] = useState("");
 
@@ -32,10 +33,24 @@ export default function DeckPicker({ onClose, onPick }) {
           </button>
         </div>
         {error && <p className="text-sm text-red-300">{error}</p>}
-        {decks && !decks.length && (
-          <p className="text-sm text-white/60">No saved decks yet. Use Create a deck to make one.</p>
-        )}
         <ul className="flex flex-col gap-2 overflow-y-auto">
+          <li className="flex items-center gap-3 rounded bg-white/5 p-2">
+            <button
+              className="flex flex-1 items-center gap-3 rounded text-left hover:bg-white/10"
+              onClick={() => {
+                onPickPlaying();
+                onClose();
+              }}
+            >
+              <span className="h-14 w-10 overflow-hidden rounded">
+                <CardFace card={{ number: "A", suit: "spade", faceUp: true }} size={16} />
+              </span>
+              <span className="flex flex-col">
+                <span className="font-medium">Playing cards</span>
+                <span className="text-xs text-white/60">52 cards · built in</span>
+              </span>
+            </button>
+          </li>
           {decks?.map((deck) => (
             <li key={deck.id} className="flex items-center gap-3 rounded bg-white/5 p-2">
               <button
@@ -60,6 +75,9 @@ export default function DeckPicker({ onClose, onPick }) {
             </li>
           ))}
         </ul>
+        {decks && !decks.length && (
+          <p className="text-sm text-white/60">No saved decks yet. Use Create a deck to make your own.</p>
+        )}
       </div>
     </div>
   );

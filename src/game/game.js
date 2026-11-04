@@ -16,22 +16,52 @@ export function rotVec(p, deg) {
 
 // The last id in stack.cards is the top card.
 export function initialState() {
-  const cards = {};
-  const ids = [];
-  const deck = uid();
-  for (const suit of SUITS) {
-    for (const number of NUMBERS) {
-      const id = uid();
-      cards[id] = { id, number, suit, faceUp: false, deck, deckName: "Playing cards" };
-      ids.push(id);
-    }
-  }
-  return {
-    cards,
-    stacks: { [uid()]: { x: -CARD_W / 2, y: -CARD_H / 2, rot: 0, z: 1, cards: ids } },
-    tokens: {},
-  };
+  return { ...playingCardsPatch({ cards: {}, stacks: {}, tokens: {} }, { x: 0, y: 0 }), tokens: {} };
 }
+
+// Adds " (2)", " (3)" and so on when a table deck already has this name, so menus can tell copies apart.
+function uniqueDeckName(state, name) {
+  const taken = new Set(Object.values(state.cards).map((c) => c.deckName));
+  if (!taken.has(name)) return name;
+  let n = 2;
+  while (taken.has(`${name} (${n})`)) n++;
+  return `${name} (${n})`;
+}
+
+// Moves a new deck to the right, as the player sees it, until it no longer sits on another stack.
+function freeDeckSpot(state, at, viewRot) {
+  const step = rotVec({ x: CARD_W + 20, y: 0 }, -viewRot);
+  const stacks = Object.values(state.stacks);
+  let p = { x: at.x - CARD_W / 2, y: at.y - CARD_H / 2 };
+  for (let i = 0; i < 50; i++) {
+    if (!stacks.some((s) => Math.abs(s.x - p.x) < CARD_W && Math.abs(s.y - p.y) < CARD_H)) break;
+    p = { x: p.x + step.x, y: p.y + step.y };
+  }
+  return p;
+}
+
+// Puts new face-down cards on the table as one deck instance near a point, upright for the player; the last card is on top.
+function placeDeckPatch(state, faces, at, viewRot, deckName) {
+  const cards = {};
+  const deck = uid();
+  const name = uniqueDeckName(state, deckName);
+  const ids = faces.map((face) => {
+    const id = uid();
+    cards[id] = { ...face, id, faceUp: false, deck, deckName: name };
+    return id;
+  });
+  const p = freeDeckSpot(state, at, viewRot);
+  return { cards, stacks: { [uid()]: { ...p, rot: normRot(-viewRot), z: topZ(state), cards: ids } } };
+}
+
+export const playingCardsPatch = (state, at, viewRot = 0) =>
+  placeDeckPatch(
+    state,
+    SUITS.flatMap((suit) => NUMBERS.map((number) => ({ number, suit }))),
+    at,
+    viewRot,
+    "Playing cards",
+  );
 
 // Names an image by a 53-bit hash of its data URL, so the same picture always gets the same id and is sent only once.
 export function imageId(url) {
@@ -315,22 +345,9 @@ export function drawPatch(state, ids, viewRot = 0) {
   return { stacks };
 }
 
-// Puts a saved deck face down at a point, upright for the player, with the sheet's first card on top.
-export function deckPatch(state, imgIds, at, viewRot = 0, deckName = "Deck") {
-  const cards = {};
-  const deck = uid();
-  const ids = imgIds.map((imgId) => {
-    const id = uid();
-    cards[id] = { id, imgId, faceUp: false, deck, deckName };
-    return id;
-  });
-  return {
-    cards,
-    stacks: {
-      [uid()]: { x: at.x - CARD_W / 2, y: at.y - CARD_H / 2, rot: normRot(-viewRot), z: topZ(state), cards: ids.reverse() },
-    },
-  };
-}
+// Puts a saved deck face down near a point with the sheet's first card on top.
+export const deckPatch = (state, imgIds, at, viewRot = 0, deckName = "Deck") =>
+  placeDeckPatch(state, imgIds.map((imgId) => ({ imgId })).reverse(), at, viewRot, deckName);
 
 export function addImagesPatch(state, imgIds) {
   const cards = {};
@@ -517,8 +534,9 @@ export function guardPatch(state, patch, from) {
   return { ...patch, tokens };
 }
 
-// Lists the table decks whose every card is in this stack; each card remembers the deck it was put on the table with.
-export function wholeDecksIn(state, stackId) {
+// Lists the table decks with cards in this stack; whole is true when every card of the deck is here.
+// Each card remembers the deck it was put on the table with.
+export function decksIn(state, stackId) {
   const stack = state.stacks[stackId];
   if (!stack) return [];
   const inStack = new Set(stack.cards);
@@ -527,9 +545,35 @@ export function wholeDecksIn(state, stackId) {
     const c = state.cards[cid];
     if (c?.deck && !decks.has(c.deck)) decks.set(c.deck, c.deckName || "Deck");
   }
-  return [...decks]
-    .filter(([deck]) => Object.values(state.cards).every((c) => c.deck !== deck || inStack.has(c.id)))
-    .map(([deck, name]) => ({ deck, name }));
+  return [...decks].map(([deck, name]) => ({
+    deck,
+    name,
+    whole: Object.values(state.cards).every((c) => c.deck !== deck || inStack.has(c.id)),
+  }));
+}
+
+// Gathers every card of a deck from the whole table, hidden areas included, under this stack in table order.
+// The deck's cards end face down and stacks left empty are removed.
+export function returnDeckPatch(state, stackId, deck) {
+  const target = state.stacks[stackId];
+  if (!target) return null;
+  const isDeck = (cid) => state.cards[cid]?.deck === deck;
+  const stacks = {};
+  const back = [];
+  const others = Object.entries(state.stacks)
+    .filter(([id]) => id !== stackId)
+    .sort((a, b) => a[1].z - b[1].z);
+  for (const [id, s] of others) {
+    const rest = s.cards.filter((cid) => !isDeck(cid));
+    if (rest.length === s.cards.length) continue;
+    back.push(...s.cards.filter(isDeck));
+    stacks[id] = rest.length ? { ...s, cards: rest } : null;
+  }
+  const order = [...back, ...target.cards];
+  stacks[stackId] = { ...target, cards: order };
+  const cards = {};
+  for (const cid of order) if (isDeck(cid) && state.cards[cid].faceUp) cards[cid] = { ...state.cards[cid], faceUp: false };
+  return { stacks, cards };
 }
 
 // Takes every card of a table deck off the table; stacks left empty are removed.

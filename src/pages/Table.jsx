@@ -11,7 +11,8 @@ import {
   addImagesPatch, applyPatch, autoSplayPatch, cutPatch, dealPatch, drawPatch, dropTarget, flipPatch, groupPatch,
   initialState, dragSplayPatch, resizeImage, rotatePatch, shufflePatch, straightRots, topZ, uid, CARD_W, CARD_H,
   areaOf, areaPatch, boardPatch, canEditToken, isRect, tokenOnBoard, counterPatch, diePatch, guardPatch, inArea, moveArea, resizeArea, rollPatch,
-  stackAreaOwner, normalizeState, COUNTER_W, DIE_SIZE, DICE, deckPatch, imageId, imageIds, removeDeckPatch, rotVec, wholeDecksIn, worldCorner,
+  stackAreaOwner, normalizeState, COUNTER_W, DIE_SIZE, DICE, deckPatch, imageId, imageIds, removeDeckPatch, rotVec, decksIn, worldCorner,
+  playingCardsPatch, returnDeckPatch,
 } from "../game/game";
 
 const HOVER_TO_DISPLAY_MS = 1000;
@@ -741,17 +742,27 @@ export default function Table() {
           ["Shuffle", "S", () => shuffle([menu?.id])],
           ["Splay straight", "Shift+S", () => splay([menu?.id], false)],
           ["Splay hand", "Ctrl+Shift+S", () => splay([menu?.id], true)],
-          // Only the host adds decks, so only the host can take a whole one off the table.
+          // Only the host adds decks, so only the host can gather one back or take a whole one off the table.
           ...(isHost && menu?.kind === "stack"
-            ? wholeDecksIn(state, menu.id).map(({ deck, name }) => [
-                `Delete deck "${name}"`,
-                "",
-                () => {
-                  if (window.confirm(`Remove every card of "${name}" from the table? This can't be undone.`)) {
-                    commit(removeDeckPatch(stateRef.current, deck));
-                  }
-                },
-              ])
+            ? decksIn(state, menu.id).map(({ deck, name, whole }) =>
+                whole
+                  ? [
+                      `Delete deck "${name}"`,
+                      "",
+                      () => {
+                        if (window.confirm(`Remove every card of "${name}" from the table? This can't be undone.`)) {
+                          commit(removeDeckPatch(stateRef.current, deck));
+                        }
+                      },
+                      `delete:${deck}`,
+                    ]
+                  : [
+                      `Return all cards to "${name}"`,
+                      "",
+                      () => commit(returnDeckPatch(stateRef.current, menu.id, deck)),
+                      `return:${deck}`,
+                    ],
+              )
             : []),
         ];
 
@@ -1127,9 +1138,9 @@ export default function Table() {
           style={{ left: menu.x, top: menu.y }}
           onMouseDown={(e) => e.stopPropagation()}
         >
-          {menuItems.map(([label, keys, run]) => (
+          {menuItems.map(([label, keys, run, id]) => (
             <button
-              key={label}
+              key={id ?? label}
               className="flex justify-between gap-4 rounded px-3 py-1 text-left"
               onClick={() => {
                 run();
@@ -1154,6 +1165,7 @@ export default function Table() {
         <DeckPicker
           onClose={() => setDeckModal(null)}
           onPick={(urls, name) => commit(deckPatch(stateRef.current, addImages(urls), viewCenter(), view.rot, name))}
+          onPickPlaying={() => commit(playingCardsPatch(stateRef.current, viewCenter(), view.rot))}
         />
       )}
     </div>
